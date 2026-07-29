@@ -1,0 +1,107 @@
+name: CoDeSSM_uhdblur
+model_type: CoDeSSMModel
+scale: &upscale 1
+num_gpu: 1  
+manual_seed: 0
+find_unused_parameters: false
+datasets:
+  train:
+    name: General_Image_Blur
+    type: PairedImageDataset
+    dataroot_gt: datasets/UHD-Deblur/train/gt
+    dataroot_lq: datasets/UHD-Deblur/train/lq
+    io_backend:
+      type: disk
+    gt_size: 768  
+    use_resize_crop: True
+    use_flip: True
+    use_rot: True
+    use_shuffle: True
+    geometric_augs: True
+    batch_size_per_gpu: &bsz 4
+    num_worker_per_gpu: 8
+    dataset_enlarge_ratio: 1
+    prefetch_mode: cuda
+    pin_memory: true
+    num_prefetch_queue: *bsz
+  val:
+    name: General_Image_Valid
+    type: PairedImageDataset
+    dataroot_gt: datasets/UHD-Deblur/test/gt
+    dataroot_lq: datasets/UHD-Deblur/test/lq
+    io_backend:
+      type: disk
+    geometric_augs: False
+    use_resize_crop: False
+    use_flip: False
+    use_rot: False
+network_g:
+  type: CoDeSSM
+  input_dim: 3
+  output_dim: 3
+  feature_dim: 32
+  num_clusters: [16, 24, 32]
+  heads: [1, 2, 4]
+  num_blocks: [2, 4, 4]
+  ffn_expansion_factor: 2.66
+  use_checkpoint: true
+  hf_num_experts: 4
+  hf_top_k: 2
+  hf_expert_ratio: 0.5
+  hf_router_hidden_ratio: 0.125
+path:
+  pretrain_network_hq: ~
+  pretrain_network_g: ~
+  strict_load: true
+  resume_state: ~
+train:
+  total_iter: 200000
+  warmup_iter: 1000
+  accum_steps: 4
+  max_grad_norm: 1
+  moe_balance_weight: 0.01  
+  optim_g:
+    type: AdamW
+    lr: !!float 5e-4
+    weight_decay: !!float 1e-3
+    betas: [0.9, 0.99]
+  scheduler:
+    type: CosineAnnealingRestartCyclicLR
+    periods: [1000, 199000]       
+    restart_weights: [1, 1]
+    eta_mins: [0.0005, 0.0000001] #
+  pixel_opt:
+    type: L1Loss
+    loss_weight: 1.0
+    reduction: mean
+  fft_opt:
+    type: FFTLoss
+    loss_weight: !!float 0.1
+val:
+  val_freq: !!float 20000
+  save_img: false
+  key_metric: psnr
+  metrics:
+    psnr:
+      type: psnr
+      crop_border: 0
+      test_y_channel: false
+    ssim:
+      type: ssim
+      crop_border: 0
+      test_y_channel: false
+    lpips:
+      type: lpips
+      better: lower
+logger:
+  print_freq: 100
+  save_checkpoint_freq: !!float 20000
+  save_latest_freq: !!float 1e4
+  show_tf_imgs_freq: !!float 20000
+  use_tb_logger: true
+  wandb:
+    project: CoDeSSM
+    resume_id: ~
+dist_params:
+  backend: nccl
+  port: 16500
